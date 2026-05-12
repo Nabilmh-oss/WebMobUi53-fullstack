@@ -22,17 +22,41 @@ class ApiPollController extends Controller
     /**
      * Display the specified poll by its secret token.
      */
-    public function show(string $token)
+public function show(Request $request, string $token)
     {
-        $poll = Poll::with(['options' => function ($query) {
-            $query->withCount('votes');
-        }])->where('secret_token', $token)->first();
+        $poll = Poll::with(['options' => fn($q) => $q->withCount('votes')])
+            ->where('secret_token', $token)
+            ->first();
 
         if (!$poll) {
-            return response()->json(['message' => 'Poll not found.'], 404);
+            return response()->json(['message' => 'Sondage introuvable.'], 404);
         }
 
-        return $poll;
+        $user          = auth('sanctum')->user();
+        $isOwner       = $user && $user->id === $poll->user_id;
+        $hasVoted      = $user
+            ? \App\Models\PollVote::where('poll_id', $poll->id)->where('user_id', $user->id)->exists()
+            : false;
+        $userVoteIds   = $user
+            ? \App\Models\PollVote::where('poll_id', $poll->id)->where('user_id', $user->id)->pluck('poll_option_id')
+            : [];
+        $canSeeResults = $isOwner || $poll->results_public;
+
+        $data                         = $poll->toArray();
+        $data['is_owner']             = $isOwner;
+        $data['has_voted']            = $hasVoted;
+        $data['user_vote_option_ids'] = $userVoteIds;
+        $data['can_see_results']      = $canSeeResults;
+        $data['is_authenticated']     = (bool) $user;
+
+        if (!$canSeeResults) {
+            $data['options'] = array_map(function ($opt) {
+                unset($opt['votes_count']);
+                return $opt;
+            }, $data['options']);
+        }
+
+        return response()->json($data);
     }
 
     /**

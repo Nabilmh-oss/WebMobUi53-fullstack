@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Models\Poll;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class ApiPollController extends Controller
 {
@@ -13,9 +14,9 @@ class ApiPollController extends Controller
      */
     public function index(Request $request)
     {
-        $polls = $request->user()->polls()->orderBy('created_at', 'desc')->get();
+        $polls = $request->user()->polls()->with('options')->orderBy('created_at', 'desc')->get();
 
-        return $polls;
+        return response()->json($polls);
     }
 
     /**
@@ -48,5 +49,85 @@ class ApiPollController extends Controller
         $poll->delete();
 
         return response()->json(['message' => 'success'], 200);
+    }
+    public function store(Request $request)
+    {
+        $v = $request->validate([
+            'title'                  => 'nullable|string|max:255',
+            'question'               => 'required|string|max:255',
+            'allow_multiple_choices' => 'boolean',
+            'allow_vote_change'      => 'boolean',
+            'results_public'         => 'boolean',
+            'duration'               => 'nullable|integer|min:1',
+            'options'                => 'nullable|array',
+            'options.*.label'        => 'required_with:options|string|max:255',
+            'launch'                 => 'boolean',
+        ]);
+
+        $launching = $v['launch'] ?? false;
+
+        $poll = $request->user()->polls()->create([
+            'title'                  => $v['title'] ?? null,
+            'question'               => $v['question'],
+            'secret_token'           => Str::random(32),
+            'is_draft'               => !$launching,
+            'allow_multiple_choices' => $v['allow_multiple_choices'] ?? false,
+            'allow_vote_change'      => $v['allow_vote_change'] ?? false,
+            'results_public'         => $v['results_public'] ?? false,
+            'duration'               => $v['duration'] ?? null,
+            'started_at'             => $launching ? now() : null,
+            'ends_at'                => $launching && isset($v['duration'])
+                                            ? now()->addSeconds($v['duration'])
+                                            : null,
+        ]);
+
+        foreach ($v['options'] ?? [] as $opt) {
+            $poll->options()->create(['label' => $opt['label']]);
+        }
+
+        return response()->json($poll->load('options'), 201);
+    }
+
+    public function update(Request $request, int $id)
+    {
+        $poll = Poll::where('id', $id)->where('user_id', $request->user()->id)->first();
+
+        if (!$poll) {
+            return response()->json(['message' => 'Sondage introuvable.'], 404);
+        }
+
+        $v = $request->validate([
+            'title'                  => 'nullable|string|max:255',
+            'question'               => 'sometimes|required|string|max:255',
+            'allow_multiple_choices' => 'boolean',
+            'allow_vote_change'      => 'boolean',
+            'results_public'         => 'boolean',
+            'duration'               => 'nullable|integer|min:1',
+        ]);
+
+        $poll->update($v);
+
+        return response()->json($poll->fresh()->load('options'));
+    }
+
+    public function launch(Request $request, int $id)
+    {
+        $poll = Poll::where('id', $id)->where('user_id', $request->user()->id)->first();
+
+        if (!$poll) {
+            return response()->json(['message' => 'Sondage introuvable.'], 404);
+        }
+
+        if (!$poll->is_draft) {
+            return response()->json(['message' => 'Ce sondage est déjà lancé.'], 409);
+        }
+
+        $poll->update([
+            'is_draft'   => false,
+            'started_at' => now(),
+            'ends_at'    => $poll->duration ? now()->addSeconds($poll->duration) : null,
+        ]);
+
+        return response()->json($poll->fresh()->load('options'));
     }
 }

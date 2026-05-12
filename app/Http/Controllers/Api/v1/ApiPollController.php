@@ -154,4 +154,51 @@ public function show(Request $request, string $token)
 
         return response()->json($poll->fresh()->load('options'));
     }
+    public function vote(Request $request, string $token)
+    {
+        $poll = Poll::with('options')->where('secret_token', $token)->first();
+
+        if (!$poll) {
+            return response()->json(['message' => 'Sondage introuvable.'], 404);
+        }
+        if ($poll->is_draft) {
+            return response()->json(['message' => 'Ce sondage n\'est pas encore actif.'], 403);
+        }
+        if ($poll->ends_at && $poll->ends_at < now()) {
+            return response()->json(['message' => 'Ce sondage est terminé.'], 403);
+        }
+
+        $v        = $request->validate(['option_ids' => 'required|array|min:1', 'option_ids.*' => 'integer']);
+        $validIds = $poll->options->pluck('id')->toArray();
+
+        foreach ($v['option_ids'] as $oid) {
+            if (!in_array($oid, $validIds)) {
+                return response()->json(['message' => 'Option invalide.'], 422);
+            }
+        }
+
+        if (!$poll->allow_multiple_choices && count($v['option_ids']) > 1) {
+            return response()->json(['message' => 'Un seul choix autorisé.'], 422);
+        }
+
+        $userId   = $request->user()->id;
+        $existing = \App\Models\PollVote::where('poll_id', $poll->id)->where('user_id', $userId)->get();
+
+        if ($existing->count() > 0) {
+            if (!$poll->allow_vote_change) {
+                return response()->json(['message' => 'Vous avez déjà voté.'], 403);
+            }
+            $existing->each->delete();
+        }
+
+        foreach ($v['option_ids'] as $oid) {
+            \App\Models\PollVote::create([
+                'poll_id'        => $poll->id,
+                'user_id'        => $userId,
+                'poll_option_id' => $oid,
+            ]);
+        }
+
+        return response()->json(['message' => 'Vote enregistré.'], 201);
+    }
 }

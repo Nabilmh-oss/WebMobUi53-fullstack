@@ -30,4 +30,6 @@ class PollVote extends Model
     {
         return $this->belongsTo(PollOption::class, 'poll_option_id');
     }
+
+    protected $fillable = ['poll_id', 'user_id', 'poll_option_id'];
 }

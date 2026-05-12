@@ -23,4 +23,6 @@ class PollOption extends Model
     {
         return $this->hasMany(PollVote::class);
     }
+
+    protected $fillable = ['poll_id', 'label'];
 }

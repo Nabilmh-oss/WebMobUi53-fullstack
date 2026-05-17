@@ -17,6 +17,7 @@ const voteError   = ref(null);
 const voteSuccess = ref(false);
 const voting      = ref(false);
 const selectedOptionIds = ref([]);
+const currentUrl = window.location.href;
 
 const isExpired = computed(() => {
   if (!poll.value?.ends_at) return false;
@@ -111,8 +112,8 @@ usePolling(fetchPoll, 5000);
           </p>
           <!-- Lien de partage visible uniquement par le créateur -->
           <div v-if="poll.is_owner" class="mt-3 flex gap-2 items-center">
-            <input :value="window.location.href" readonly
-              class="flex-1 text-xs border rounded-lg px-2 py-1 bg-slate-50 text-slate-600" />
+            <input :value="currentUrl" readonly
+                class="flex-1 text-xs border rounded-lg px-2 py-1 bg-slate-50 text-slate-600" />
             <button @click="copyLink"
               class="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200">
               Copier le lien
